@@ -15,18 +15,20 @@ Function Test-InvalidSPOFileFolder {
 		Parameter alias is Legacy2013.  
 	
 	.EXAMPLE
-		Get-ChildItem -Path C:\Users\<UserName>\Documents -Recurse |
+		Get-ChildItem -Path "C:\Users\$Env:USERNAME\Documents" -Recurse |
 			Test-InvalidSPOFileFolder | 
 			Export-CSV -Path '.\Test-InvalidSPOFileFolder.csv'
 	
 	.NOTE
 		Author: Terry E Dow
 		Creation Date: 2018-12-23
-		Last Updated: 2019-01-07
+		Last Updated: 2019-01-13
 
 		Reference:
 		# Invalid file names and file types in OneDrive, OneDrive for Business, and SharePoint
-		# https://support.office.com/en-us/article/invalid-file-names-and-file-types-in-onedrive-onedrive-for-business-and-sharepoint-64883a5d-228e-48f5-b3d2-eb39e07630fa?ui=en-US&rs=en-US&ad=US#invalidcharacters
+		# 	https://support.office.com/en-us/article/invalid-file-names-and-file-types-in-onedrive-onedrive-for-business-and-sharepoint-64883a5d-228e-48f5-b3d2-eb39e07630fa?ui=en-US&rs=en-US&ad=US#invalidcharacters
+		# “Sorry, OneDrive can’t add your folder right now.”
+		# 	https://blogs.technet.microsoft.com/odfb/2017/02/07/sorry-onedrive-cant-add-your-folder-right-now/
 	#>
 	[CmdletBinding(
 		SupportsShouldProcess = $TRUE # Enable support for -WhatIf by invoked destructive cmdlets.
@@ -62,34 +64,40 @@ Function Test-InvalidSPOFileFolder {
 		$WhatIf = If ( $cmdletBoundParameters.ContainsKey('WhatIf') ) { $cmdletBoundParameters['WhatIf'] } Else { $FALSE }
 		Remove-Variable -Name cmdletBoundParameters -WhatIf:$FALSE
 
-		# Initialize metrics
+		# Collect script execution metrics.
+		$scriptStartTime = Get-Date
+		Write-Verbose "`$scriptStartTime:,$($scriptStartTime.ToString('s'))"
+
+		# Initialize all item metrics.
 		$totalCount = 0
-		$totalCountFile = 0
 		$totalCountDirectory = 0
-		$totalSize = 0
+		$totalCountFile = 0
 		$totalInvalid = 0
+		$totalSize = 0
 		$maxFullNameLength = 0
 
-		
-		# Define restrictions
+		# Define restrictions and limitations.
 		If ( $SpecialCharactersStateInFileFolderNamesAllowed ) {
 			# RegEx Esc Char . $ ^ { [ ( | ) * + ? \
 			
 			# " * : < > ? / \ |
 			$invalidCharactersPattern = [RegEx] '["|\*|:|<|>|\?|/|\\|\|]'
 		} Else {
-			# ~ " # % & * : < > ? / \ { | }.
+			# ~ " # % & * : < > ? / \ { | }
 			$invalidCharactersPattern = [RegEx] '[~|"|#|%|&|\*|:|<|>|\?|/|\\|{|\||}]'
 		}
 		
+		$seperator = [System.IO.Path]::DirectorySeparatorChar
+		$seperatorEscaped = $seperator.ToString() * 2
+		
 		# 2.2.57 UNC https://msdn.microsoft.com/en-us/library/gg465305.aspx
 		# "\\" host-name "\" share-name  [ "\" object-name ]
-		$UNCPathPattern = [RegEx] '\\\\[^\*\\]{1,16}' # NetBIOS Name https://msdn.microsoft.com/en-us/library/dd891456.aspx
-		$FileSystemPattern = [RegEx] '[A-Z]:'
-		$InvalidFileName = @( '.lock', 'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9', '_vti_', 'desktop.ini' )
+		$UNCPathPrefixPattern = [RegEx] '$seperatorEscaped$seperatorEscaped[^$seperatorEscaped]{1,16}' # \\host-name\share-name\volume https://docs.microsoft.com/en-us/dotnet/standard/io/file-path-formats NetBIOS Name https://msdn.microsoft.com/en-us/library/dd891456.aspx
+		$FileSystemPrefixPattern = [RegEx] '[A-Z]:' # volume-name: https://docs.microsoft.com/en-us/dotnet/standard/io/file-path-formats
+		$InvalidFileName = [RegEx] '^(:?\.lock|CON|PRN|AUX|NUL|COM1|COM2|COM3|COM4|COM5|COM6|COM7|COM8|COM9|LPT1|LPT2|LPT3|LPT4|LPT5|LPT6|LPT7|LPT8|LPT9|_vti_|desktop\.ini)$' #@( '.lock', 'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9', '_vti_', 'desktop.ini' ) -Contains
 		$InvalidFileNameStartsWith = [RegEx] '^[~|\$]'
-		$InvalidFolderName = @( '_vti_', 'forms' )
-		$BlockedFileType = @( '.pst', '.one' ) 
+		$InvalidFolderName = [RegEx] '^(:?_vti_|forms)$' # @( '_vti_', 'forms' ) -Contains
+		$BlockedFileType = [RegEx] '^(?:\.pst|\.one$)' # @( '.pst', '.one' ) -Contains
 		$FullNameMaxLength = 400 #  OneDrive, OneDrive for Business and SharePoint Online 400; SharePoint Server versions 260
 		$FileMaxSize = 32GB # OneDrive 35GB; OneDrive for Business 15GB
 		$FileMaxCount = 100000 
@@ -109,8 +117,9 @@ Function Test-InvalidSPOFileFolder {
 		Write-Debug "`$extension:,$extension"
 		$fullName = $ItemInfo.FullName
 		Write-Debug "`$fullName:,$fullName"
-		Try { $length = $ItemInfo.Length } Catch { $length = 0 }
-		Write-Debug "`$length:,$length"
+		Write-Verbose "`$fullName:,$fullName"
+		Try { $size = $ItemInfo.Length } Catch { $size = 0 }
+		Write-Debug "`$size:,$size"
 		$name = $ItemInfo.Name
 		Write-Debug "`$name:,$name"
 		$isContainer = $ItemInfo.PSIsContainer
@@ -118,23 +127,27 @@ Function Test-InvalidSPOFileFolder {
 		#$fileName = $ItemInfo.VersionInfo.FileName
 		#Write-Debug "`$fileName:,fileName"
 		
-		# Collect metrics
+		# Collect all item metrics.
 		$totalCount++
-		$totalSize += $length
+		$totalSize += $size
 		
-		# Initialize metrics. 		
+		# Initialize this item's metrics. 		
 		$isInvalid = $FALSE
 		$isInvalidCharacter = $FALSE
 		$isInvalidFolderName = $FALSE
-		$isInvalidFileName = $FALSE
-		$isBlockedFileType = $FALSE
-		$isInvalidFileSize = $FALSE
 		$isInvalidFileCount = $FALSE
+		$isInvalidFileName = $FALSE
+		$isInvalidFileSize = $FALSE
+		$isBlockedFileType = $FALSE
 		$isInvalidFullNameLength = $FALSE
-		$isNetwork = $FALSE
 		$isMappedDrive = $FALSE
+		$isNetwork = $FALSE
 		$status = ''
 		$newName = $Name
+		
+		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
+		# Restrictions: ---2----+----3----+----4----+----5----+----6----+----7----+----8
+		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 		
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 		# Invalid characters
@@ -181,21 +194,21 @@ Function Test-InvalidSPOFileFolder {
 		# Is folder or file?
 		If ( $isContainer ) {
 			$totalCountDirectory++
-			If ( $invalidFolderName -Contains $name ) { 
+			If ( $newName -Match $invalidFolderName ) { 
 				$isInvalid = $TRUE
 				$totalInvalid++
 				$isInvalidFolderName = $TRUE
-				$status = (( $status, " Invalid FolderName '$name'" ) -Join ';').Trim(';')
+				$status = (( $status, " Invalid FolderName '$newName'" ) -Join ';').Trim(';')
 				
 				$newName = "-$newName-" 
 			}		
 		} Else {
 			$totalCountFile++
-			If ( $invalidFileName -Contains $name -Or $name -Match $invalidFileNameStartsWith ) {
+			If ( $newName -Match $invalidFileName -Or $newName -Match $invalidFileNameStartsWith ) {
 				$isInvalid = $TRUE
 				$totalInvalid++
 				$isInvalidFileName = $TRUE
-				$status = (( $status, " Invalid FileName '$name'" ) -Join ';').Trim(';')
+				$status = (( $status, " Invalid FileName '$newName'" ) -Join ';').Trim(';')
 				
 				$newName = "-$newName-" 
 			}
@@ -205,7 +218,7 @@ Function Test-InvalidSPOFileFolder {
 		# Invalid or blocked file types
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 
-		If ( $blockedFileType -Contains $extension ) { 
+		If ( $extension -Match $blockedFileType ) { 
 			$isInvalid = $TRUE
 			$totalInvalid++
 			$isBlockedFileType = $TRUE
@@ -216,8 +229,8 @@ Function Test-InvalidSPOFileFolder {
 		# Network or mapped drives
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 
-		# If UNC path
-		If ( $fullName -Match $UNCPathPattern ) { 
+		# If UNC path prefix
+		If ( $fullName -Match $UNCPathPrefixPattern ) { 
 			$isInvalid = $TRUE
 			$totalInvalid++
 			$isNetwork = $TRUE
@@ -225,8 +238,9 @@ Function Test-InvalidSPOFileFolder {
 		}
 		
 		# If FileSystem device type is Network
-		Write-Debug ( Get-CimInstance Win32_LogicalDisk -Filter "DeviceId='$($fullName[0]):'" ).DriveType
-		IF ( $fullName -CMatch $FileSystemPattern -And (( Get-CimInstance Win32_LogicalDisk -Filter "DeviceId='$($fullName[0]):'" ).DriveType -EQ 4) ) { # DriveType Network = 4
+		#Write-Debug ( Get-CimInstance Win32_LogicalDisk -Filter "DeviceId='$($fullName[0]):'" ).DriveType
+		# <<<< TODO cache results
+		IF ( $fullName -CMatch $FileSystemPrefixPattern -And (( Get-CimInstance Win32_LogicalDisk -Filter "DeviceId='$($fullName[0]):'" -Verbose:$FALSE -Debug:$FALSE ).DriveType -EQ 4) ) { # DriveType Network = 4
 			$isInvalid = $TRUE
 			$totalInvalid++
 			$isMappedDrive = $TRUE
@@ -256,14 +270,18 @@ Function Test-InvalidSPOFileFolder {
 		# Handled with $isBlockedFileType
 		
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
+		# Limitations: ----2----+----3----+----4----+----5----+----6----+----7----+----8
+		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
+		
+		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 		# File upload size
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 		
-		If ( $fileMaxSize -LT $length ) {
+		If ( $fileMaxSize -LT $size ) {
 			$isInvalid = $TRUE
 			$totalInvalid++
 			$isInvalidFileSize = $TRUE
-			$status = (( $status, " Invalid file size '$length' greater than file max size '$fileMaxSize'" ) -Join ';').Trim(';')
+			$status = (( $status, " Invalid file size '$size' greater than file max size '$fileMaxSize'" ) -Join ';').Trim(';')
 		}
 		
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
@@ -280,6 +298,9 @@ Function Test-InvalidSPOFileFolder {
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 		# Thumbnails and previews
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
+		
+		# Thumbs.db
+		# ehthumbs.db
 		
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 		# Number of items that can be synced
@@ -324,36 +345,43 @@ Function Test-InvalidSPOFileFolder {
 			Extension = $extension; 
 			FullName = $fullName; 
 			FullNameLength = $fullName.Length;
-			FullNameFolderDepth = $fullName.Split('\').Count - 2; # Don't count first and last components; PSDrive, Name
-			Length = $length; 
+			FullNameFolderDepth = $fullName.Split($seperator).Count - 2; # Don't count first and last components; <PSDrive>\..\<Name>
+			Size = $size; 
 			Name = $name; 
 			NameLength = $name.Length; 
 			IsContainer = $isContainer; 
 			IsInvalid = $isInvalid; 
-			IsInvalidCharacter = $isInvalidCharacter; 
-			IsInvalidFolderName = $isInvalidFolderName; 
-			IsInvalidFileName = $isInvalidFileName; 
 			IsBlockedFileType = $isBlockedFileType; 
-			IsNetwork = $isNetwork;
-			IsMappedDrive = $isMappedDrive;
+			IsInvalidCharacter = $isInvalidCharacter; 
+			IsInvalidFileCount = $isInvalidFileCount;
+			IsInvalidFileName = $isInvalidFileName; 
 			IsInvalidFileSize = $isInvalidFileSize; 
+			IsInvalidFolderName = $isInvalidFolderName; 
 			IsInvalidFullNameLength = $isInvalidFullNameLength; 
-			TotalCount = $totalCount;
-			TotalCountFile = $totalCountFile;
-			TotalCountDirectory = $totalCountDirectory;
-			TotalSize = $totalSize;
+			IsMappedDrive = $isMappedDrive;
+			IsNetwork = $isNetwork;
 			Status = $status.Trim(' ');
 			NewName = $newName; 
+			TotalCount = $totalCount;
+			TotalCountDirectory = $totalCountDirectory;
+			TotalCountFile = $totalCountFile;
+			TotalInvalid = $totalInvalid;
+			TotalSize = $totalSize;
 		} )
 	} 
 		
 	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 	End {
-		Write-Verbose "`$totalInvalid:,$totalInvalid"
 		Write-Verbose "`$totalCount:,$totalCount"
 		Write-Verbose "`$totalCountFile:,$totalCountFile"
 		Write-Verbose "`$totalCountDirectory:,$totalCountDirectory"
+		Write-Verbose "`$totalInvalid:,$totalInvalid"
 		Write-Verbose "`$totalSize:,$totalSize"
+		
+		$scriptEndTime = Get-Date
+		Write-Verbose "`$scriptEndTime:,$($scriptEndTime.ToString('s'))"
+		$scriptElapsedTime =  $scriptEndTime - $scriptStartTime
+		Write-Verbose "`$scriptElapsedTime:,$scriptElapsedTime"
 	}
 
 }

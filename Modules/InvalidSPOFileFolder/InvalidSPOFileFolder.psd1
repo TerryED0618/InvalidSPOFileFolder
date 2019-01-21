@@ -76,7 +76,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	# NestedModules = @()
 
 	# Functions to export from this module
-	FunctionsToExport = @( 'Test-InvalidSPOFileFolder', 'Test-InvalidSPOFileFolderToCSV', )
+	FunctionsToExport = @( 'Test-InvalidSPOFileFolder', 'Test-InvalidSPOFileFolderToCSV', 'Rename-InvalidSPOFileFolder' )
 
 	# Cmdlets to export from this module
 	# CmdletsToExport = '*'
@@ -115,7 +115,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	
 			# ReleaseNotes of this module
 			ReleaseNotes = @'
-2019-01-07 3.1.0 
+2019-01-07 3.1.0 Initial release
 '@
 	
 		} # End of PSData hashtable
