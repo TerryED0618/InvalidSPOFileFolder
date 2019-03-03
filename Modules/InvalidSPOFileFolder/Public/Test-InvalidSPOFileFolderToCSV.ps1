@@ -49,11 +49,13 @@ Function Test-InvalidSPOFileFolderToCSV {
 				TotalSize 
 			Note: If -AlertOnly is enabled the last record may not be the total values for all items.  
 			
-		.PARAMETER SpecialCharactersStateInFileFolderNamesAllowed SwitchParameter
-			When enabled test for invalid characters allowed by SharePoint Server 2016 and newer.  
-			When disabled test for invalid characters allowed by SharePoint Server 2013 and older.  
-			Parameter alias is Legacy2013.  
-		
+		.PARAMETER Legacy2013 SwitchParameter
+			The default is to test for invalid characters allowed on SharePoint Server 2016 and newer.  
+			Verify with: (Get-SPOTenant).SpecialCharactersStateInFileFolderNames
+			Enable with: Set-SPOTenant -SpecialCharactersStateInFileFolderNames Allowed			
+			When enabled test for invalid characters allowed on legacy SharePoint Server 2013 and older.  
+			
+			
 		.PARAMETER Attributes FileAttributes
 			Gets files and folders with the specified attributes. This parameter supports all attributes and lets you specify complex combinations of attributes.
 
@@ -224,7 +226,7 @@ Function Test-InvalidSPOFileFolderToCSV {
 		.NOTE
 			Author: Terry E Dow
 			Creation Date: 2018-12-23
-			Last Modified: 2019-01-12
+			Last Modified: 2019-03-02
 
 			Reference:
 				
@@ -234,7 +236,13 @@ Function Test-InvalidSPOFileFolderToCSV {
 	)]
 	#[System.Diagnostics.DebuggerHidden()]
 	Param(
+		
+		[Parameter(
+		ValueFromPipeline=$TRUE,
+		ValueFromPipelineByPropertyName=$TRUE )]
+		[Switch] $Legacy2013 = $NULL,
 
+		
 		[Parameter(
 		ValueFromPipeline=$TRUE,
 		ValueFromPipelineByPropertyName=$TRUE )]
@@ -314,12 +322,6 @@ Function Test-InvalidSPOFileFolderToCSV {
 		ValueFromPipeline=$TRUE,
 		ValueFromPipelineByPropertyName=$TRUE )]
 		[Switch] $Recurse = $NULL,
-		
-		[Parameter(
-		ValueFromPipeline=$TRUE,
-		ValueFromPipelineByPropertyName=$TRUE )]
-		[Alias('Legacy2013')]
-		[Switch] $SpecialCharactersStateInFileFolderNamesAllowed = $NULL,
 
 	#region Script Header
 
@@ -437,7 +439,7 @@ Function Test-InvalidSPOFileFolderToCSV {
 	# Create Test-InvalidSPOFileFolder hash table to splat parameters. 
 	$testInvalidSPOFileFolderParameters = @{}
 	If ( $Debug ) { $testInvalidSPOFileFolderParameters.Debug = $Debug }
-	If ( $SpecialCharactersStateInFileFolderNamesAllowed ) { $testInvalidSPOFileFolderParameters.SpecialCharactersStateInFileFolderNamesAllowed = $SpecialCharactersStateInFileFolderNamesAllowed }
+	If ( $Legacy2013 ) { $testInvalidSPOFileFolderParameters.Legacy2013 = $Legacy2013 }
 	If ( $Verbose ) { $testInvalidSPOFileFolderParameters.Verbose = $Verbose }
 	If ( $Debug ) {
 		ForEach ( $key In $testInvalidSPOFileFolderParameters.Keys ) {

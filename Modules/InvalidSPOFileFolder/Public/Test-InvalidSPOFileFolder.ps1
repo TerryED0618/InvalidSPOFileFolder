@@ -1,34 +1,36 @@
 Function Test-InvalidSPOFileFolder {
 	<#
-	.SYNOPSIS
-		Test if a FileSystem item is invalid for synchronization with OneDrive, OneDrive for Business, and SharePoint.
-	
-	.DESCRIPTION
-		Provided a FileSystem's DirectoryInfo or FileInfo item (from Get-ChildItem or Get-Item) determine if the item's metadata is invalid for synchronition with OneDrive, OneDrive for Business, and SharePoint.  
+		.SYNOPSIS
+			Test if a FileSystem item is invalid for synchronization with OneDrive, OneDrive for Business, and SharePoint.
+		
+		.DESCRIPTION
+			Provided a FileSystem's DirectoryInfo or FileInfo item (from Get-ChildItem or Get-Item) determine if the item's metadata is invalid for synchronition with OneDrive, OneDrive for Business, and SharePoint.  
 
-	.PARAMETER ItemInfo [DirectoryInfo] or [FileInfo]
-		A FileSystem item either of type DirectoryInfo or FileInfo.  
-	
-	.PARAMETER SpecialCharactersStateInFileFolderNamesAllowed SwitchParameter
-		When enabled test for invalid characters allowed by SharePoint Server 2016 and newer.  
-		When disabled test for invalid characters allowed by SharePoint Server 2013 and older.  
-		Parameter alias is Legacy2013.  
-	
-	.EXAMPLE
-		Get-ChildItem -Path "C:\Users\$Env:USERNAME\Documents" -Recurse |
-			Test-InvalidSPOFileFolder | 
-			Export-CSV -Path '.\Test-InvalidSPOFileFolder.csv'
-	
-	.NOTE
-		Author: Terry E Dow
-		Creation Date: 2018-12-23
-		Last Updated: 2019-01-13
+		.PARAMETER ItemInfo [DirectoryInfo] or [FileInfo]
+			A FileSystem item either of type DirectoryInfo or FileInfo.  
+		
+		.PARAMETER Legacy2013 SwitchParameter
+			The default is to test for invalid characters allowed on SharePoint Server 2016 and newer.  
+			Verify with: (Get-SPOTenant).SpecialCharactersStateInFileFolderNames
+			Enable with: Set-SPOTenant -SpecialCharactersStateInFileFolderNames Allowed
+			
+			When enabled test for invalid characters allowed on legacy SharePoint Server 2013 and older.  
+			
+		.EXAMPLE
+			Get-ChildItem -Path "C:\Users\$Env:USERNAME\Documents" -Recurse |
+				Test-InvalidSPOFileFolder | 
+				Export-CSV -Path '.\Test-InvalidSPOFileFolder.csv'
+		
+		.NOTE
+			Author: Terry E Dow
+			Creation Date: 2018-12-23
+			Last Updated: 2019-03-02
 
-		Reference:
-		# Invalid file names and file types in OneDrive, OneDrive for Business, and SharePoint
-		# 	https://support.office.com/en-us/article/invalid-file-names-and-file-types-in-onedrive-onedrive-for-business-and-sharepoint-64883a5d-228e-48f5-b3d2-eb39e07630fa?ui=en-US&rs=en-US&ad=US#invalidcharacters
-		# “Sorry, OneDrive can’t add your folder right now.”
-		# 	https://blogs.technet.microsoft.com/odfb/2017/02/07/sorry-onedrive-cant-add-your-folder-right-now/
+			Reference:
+			# Invalid file names and file types in OneDrive, OneDrive for Business, and SharePoint
+			# 	https://support.office.com/en-us/article/invalid-file-names-and-file-types-in-onedrive-onedrive-for-business-and-sharepoint-64883a5d-228e-48f5-b3d2-eb39e07630fa?ui=en-US&rs=en-US&ad=US#invalidcharacters
+			# “Sorry, OneDrive can’t add your folder right now.”
+			# 	https://blogs.technet.microsoft.com/odfb/2017/02/07/sorry-onedrive-cant-add-your-folder-right-now/
 	#>
 	[CmdletBinding(
 		SupportsShouldProcess = $TRUE # Enable support for -WhatIf by invoked destructive cmdlets.
@@ -45,8 +47,7 @@ Function Test-InvalidSPOFileFolder {
 		[Parameter(
 		ValueFromPipeline=$TRUE,
 		ValueFromPipelineByPropertyName=$TRUE )]
-		[Alias('Legacy2013')]
-		[Switch] $SpecialCharactersStateInFileFolderNamesAllowed = $NULL
+		[Switch] $Legacy2013 = $NULL
 		
 	)
 
@@ -68,7 +69,7 @@ Function Test-InvalidSPOFileFolder {
 		$scriptStartTime = Get-Date
 		Write-Verbose "`$scriptStartTime:,$($scriptStartTime.ToString('s'))"
 
-		# Initialize all item metrics.
+		# Initialize metrics.
 		$totalCount = 0
 		$totalCountDirectory = 0
 		$totalCountFile = 0
@@ -76,32 +77,63 @@ Function Test-InvalidSPOFileFolder {
 		$totalSize = 0
 		$maxFullNameLength = 0
 
-		# Define restrictions and limitations.
-		If ( $SpecialCharactersStateInFileFolderNamesAllowed ) {
-			# RegEx Esc Char . $ ^ { [ ( | ) * + ? \
+		# RegEx Esc Char: . $ ^ { [ ( | ) * + ? \
+		# RegEx Options: Compiled, CultureInvariant, ECMAScript, ExplicitCapture, IgnoreCase, IgnorePatternWhitespace, Multiline, None, RightToLeft, Singleline
 			
-			# " * : < > ? / \ |
-			$invalidCharactersPattern = [RegEx] '["|\*|:|<|>|\?|/|\\|\|]'
-		} Else {
+		# Define restrictions and limitations.
+		If ( $Legacy2013 ) {	
 			# ~ " # % & * : < > ? / \ { | }
-			$invalidCharactersPattern = [RegEx] '[~|"|#|%|&|\*|:|<|>|\?|/|\\|{|\||}]'
+			$invalidCharactersPattern = New-Object RegEx '[~|"|#|%|&|\*|:|<|>|\?|/|\\|{|\||}]', @( 'Compiled', 'IgnoreCase' )
+		} Else {
+			# " * : < > ? / \ |
+			$invalidCharactersPattern = New-Object RegEx '["|\*|:|<|>|\?|/|\\|\|]', @( 'Compiled', 'IgnoreCase' )
 		}
 		
-		$seperator = [System.IO.Path]::DirectorySeparatorChar
-		$seperatorEscaped = $seperator.ToString() * 2
+		$separator = [System.IO.Path]::DirectorySeparatorChar.ToString() # RegEx escaped directory separator is Reverse-Solidus + separator.
+		$separatorEscaped = "\$separator" # RegEx escaped directory separator is Reverse-Solidus + separator.
 		
 		# 2.2.57 UNC https://msdn.microsoft.com/en-us/library/gg465305.aspx
 		# "\\" host-name "\" share-name  [ "\" object-name ]
-		$UNCPathPrefixPattern = [RegEx] '$seperatorEscaped$seperatorEscaped[^$seperatorEscaped]{1,16}' # \\host-name\share-name\volume https://docs.microsoft.com/en-us/dotnet/standard/io/file-path-formats NetBIOS Name https://msdn.microsoft.com/en-us/library/dd891456.aspx
-		$FileSystemPrefixPattern = [RegEx] '[A-Z]:' # volume-name: https://docs.microsoft.com/en-us/dotnet/standard/io/file-path-formats
-		$InvalidFileName = [RegEx] '^(:?\.lock|CON|PRN|AUX|NUL|COM1|COM2|COM3|COM4|COM5|COM6|COM7|COM8|COM9|LPT1|LPT2|LPT3|LPT4|LPT5|LPT6|LPT7|LPT8|LPT9|_vti_|desktop\.ini)$' #@( '.lock', 'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9', '_vti_', 'desktop.ini' ) -Contains
-		$InvalidFileNameStartsWith = [RegEx] '^[~|\$]'
-		$InvalidFolderName = [RegEx] '^(:?_vti_|forms)$' # @( '_vti_', 'forms' ) -Contains
-		$BlockedFileType = [RegEx] '^(?:\.pst|\.one$)' # @( '.pst', '.one' ) -Contains
+		$UNCPathPrefixPattern = New-Object RegEx '$separatorEscaped$separatorEscaped[^$separatorEscaped]{1,16}', @( 'Compiled', 'IgnoreCase' ) # \\host-name\share-name\volume https://docs.microsoft.com/en-us/dotnet/standard/io/file-path-formats NetBIOS Name https://msdn.microsoft.com/en-us/library/dd891456.aspx
+		$FileSystemPrefixPattern = New-Object RegEx '[A-Z]:', @( 'Compiled', 'IgnoreCase' ) # volume-name: https://docs.microsoft.com/en-us/dotnet/standard/io/file-path-formats
+		$InvalidFileName = New-Object RegEx '^(:?\.lock|CON|PRN|AUX|NUL|COM1|COM2|COM3|COM4|COM5|COM6|COM7|COM8|COM9|LPT1|LPT2|LPT3|LPT4|LPT5|LPT6|LPT7|LPT8|LPT9|_vti_|desktop\.ini)$', @( 'Compiled', 'IgnoreCase' ) #@( '.lock', 'CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9', '_vti_', 'desktop.ini' ) -Contains
+		$InvalidFileNameStartsWith = New-Object RegEx '^[~|\$]', @( 'Compiled', 'IgnoreCase' )
+		$InvalidFolderName = New-Object RegEx '^(:?_vti_|forms)$', @( 'Compiled', 'IgnoreCase' ) # @( '_vti_', 'forms' ) -Contains
+		$BlockedFileType = New-Object RegEx '^(?:\.pst|\.one$)', @( 'Compiled', 'IgnoreCase' ) # @( '.pst', '.one' ) -Contains
 		$FullNameMaxLength = 400 #  OneDrive, OneDrive for Business and SharePoint Online 400; SharePoint Server versions 260
 		$FileMaxSize = 32GB # OneDrive 35GB; OneDrive for Business 15GB
 		$FileMaxCount = 100000 
 		
+		# Build character substitution table for SharePoint Serve 2016 or newer: [RegEx], [String]
+		# Use -Legacy2013:$FALSE (default) to use this table.
+		$substitute = @{ 
+			'[#]' = 'Num';
+			'[%]' = 'Pct';
+			'[&]' = 'And';
+			'[{]' = '(';
+			'[}]' = ')';
+			'[~]' = '-'
+		}
+		
+		# Build character substitution table for legacy SharePoint Server 2013 and older: [RegEx], [String]
+		# Use -Legacy2013 to use this table.  
+		$substituteLegacy = @{ 
+			'["]' = '''';
+			'[#]' = 'Num';
+			'[%]' = 'Pct';
+			'[&]' = 'And';
+			'[\*]' = '+'; #
+			'[/]' = '_';
+			'[:]' = ';';
+			'[<]' = '(';
+			'[>]' = ')';
+			'[?]' = '!';
+			'[\\]' = '_'; #
+			'[{]' = '(';
+			'[\|]' = '!'; #
+			'[}]' = ')';
+			'[~]' = '-'
+		}
 	}
 	
 	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
@@ -127,7 +159,7 @@ Function Test-InvalidSPOFileFolder {
 		#$fileName = $ItemInfo.VersionInfo.FileName
 		#Write-Debug "`$fileName:,fileName"
 		
-		# Collect all item metrics.
+		# Collect metrics.
 		$totalCount++
 		$totalSize += $size
 		
@@ -154,36 +186,23 @@ Function Test-InvalidSPOFileFolder {
 		#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 		
 		If ( $name -Match $invalidCharactersPattern ) { 
+			# Update metrics.
 			$isInvalid = $TRUE
 			$totalInvalid++
 			$isInvalidCharacter = $TRUE
 			$status = (( $status, " Invalid Character" ) -Join ';').Trim(';')
 			
-			If ( $SpecialCharactersStateInFileFolderNamesAllowed ) {	
-				$newName = $newName -Replace '[#]', 'Num'
-				$newName = $newName -Replace '[%]', 'Pct'
-				$newName = $newName -Replace '[&]', 'And'
-				$newName = $newName -Replace '[{]', '('
-				$newName = $newName -Replace '[}]', ')'
-				$newName = $newName -Replace '[~]', '-'
-			} Else {
-				$newName = $newName -Replace '["]', ''''
-				$newName = $newName -Replace '[#]', 'Num'
-				$newName = $newName -Replace '[%]', 'Pct'
-				$newName = $newName -Replace '[&]', 'And'
-				$newName = $newName -Replace '[\*]', '+' #
-				$newName = $newName -Replace '[/]', '_'
-				$newName = $newName -Replace '[:]', ';'
-				$newName = $newName -Replace '[<]', '('
-				$newName = $newName -Replace '[>]', ')'
-				$newName = $newName -Replace '[?]', '!'
-				$newName = $newName -Replace '[\\]', '_' #
-				$newName = $newName -Replace '[{]', '('
-				$newName = $newName -Replace '[\|]', '!' #
-				$newName = $newName -Replace '[}]', ')'
-				$newName = $newName -Replace '[~]', '-'
-			}
+			# Optionally use legacy SharePoint 2013 character substitution table.  
+			If ( $Legacy2013 ) {	
+				$substitute = $substituteLegacy
+				Write-Debug "`$substitute:,`$substituteLegacy"
+			} 
 			
+			# Replace newName with each character in the substitution table.  
+			$substitute.GetEnumerator() | 
+				ForEach-Object { 
+					$newName = $newName -Replace $PSItem.Key, $PSItem.Value
+				}
 			Write-Debug "`$newName:,$newName"
 		}
 				
@@ -238,7 +257,7 @@ Function Test-InvalidSPOFileFolder {
 		}
 		
 		# If FileSystem device type is Network
-		#Write-Debug ( Get-CimInstance Win32_LogicalDisk -Filter "DeviceId='$($fullName[0]):'" ).DriveType
+		# Write-Debug ( Get-CimInstance Win32_LogicalDisk -Filter "DeviceId='$($fullName[0]):'" ).DriveType
 		# <<<< TODO cache results
 		IF ( $fullName -CMatch $FileSystemPrefixPattern -And (( Get-CimInstance Win32_LogicalDisk -Filter "DeviceId='$($fullName[0]):'" -Verbose:$FALSE -Debug:$FALSE ).DriveType -EQ 4) ) { # DriveType Network = 4
 			$isInvalid = $TRUE
@@ -345,7 +364,7 @@ Function Test-InvalidSPOFileFolder {
 			Extension = $extension; 
 			FullName = $fullName; 
 			FullNameLength = $fullName.Length;
-			FullNameFolderDepth = $fullName.Split($seperator).Count - 2; # Don't count first and last components; <PSDrive>\..\<Name>
+			FullNameFolderDepth = $fullName.Split($separator).Count - 2; # Don't count first and last components; <PSDrive>\..\<Name>
 			Size = $size; 
 			Name = $name; 
 			NameLength = $name.Length; 

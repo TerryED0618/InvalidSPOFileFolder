@@ -3,6 +3,7 @@ Import-Module InvalidSPOFileFolder -Force
 Write-Host "$(Get-Date)`tC:\Users\$Env:USERNAME\Documents"
 Test-InvalidSPOFileFolderToCSV -Path "C:\Users\$Env:USERNAME\Documents" -Recurse -AlertOnly -ExecutionSource '' -OutFileNameTag "$Env:USERNAME`DocumentsInvalid" -Verbose
 Test-InvalidSPOFileFolderToCSV -Path "C:\Users\$Env:USERNAME\Documents" -Recurse -ExecutionSource '' -OutFileNameTag "$Env:USERNAME`Documents" -Verbose
+Test-InvalidSPOFileFolderToCSV -Path "C:\Users\$Env:USERNAME\Documents" -Recurse -AlertOnly -Legacy2013 -ExecutionSource '' -OutFileNameTag "$Env:USERNAME`DocumentsInvalid-Legacy2013" -Verbose
 
 Write-Host "$(Get-Date)`tC:\Users\Public\Documents"
 Test-InvalidSPOFileFolderToCSV -Path "C:\Users\Public\Documents" -Recurse -AlertOnly -ExecutionSource '' -OutFileNameTag PublicDocumentsInvalid -Verbose

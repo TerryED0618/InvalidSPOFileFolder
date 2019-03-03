@@ -2,9 +2,13 @@ Function Rename-InvalidSPOFileFolder {
 	<#
 				
 		.SYNOPSIS
-			Provided with a Get-ChildItem FileSystem path and parameters, test if the folder and file items are invalid for synchronization with OneDrive, OneDrive for Business, and SharePoint.
+			Provided with a Get-ChildItem or Get-Item FileSystem path and parameters, generates two PowerShell script files remediating invalid name issues.  
 
 		.DESCRIPTION	
+			
+			Provided with a Get-ChildItem or Get-Item FileSystem path and parameters, generates two PowerShell script files remediating invalid file and folder name issues. The two files should be reviewed and corrected if warranted before implementing.  
+			
+			
 			The Get-ChildItem cmdlet gets the items in one or more specified locations. If the item is a container, it gets the items inside the container, known as child items. You can use the Recurse parameter to get items in all child containers.
 
 			A location can be a file system location, such as a directory, or a location exposed by a different Windows PowerShell provider, such as a registry hive or a certificate store.
@@ -49,10 +53,12 @@ Function Rename-InvalidSPOFileFolder {
 				TotalSize 
 			Note: If -AlertOnly is enabled the last record may not be the total values for all items.  
 			
-		.PARAMETER SpecialCharactersStateInFileFolderNamesAllowed SwitchParameter
-			When enabled test for invalid characters allowed by SharePoint Server 2016 and newer.  
-			When disabled test for invalid characters allowed by SharePoint Server 2013 and older.  
-			Parameter alias is Legacy2013.  
+		.PARAMETER Legacy2013 SwitchParameter
+			The default is to test for invalid characters allowed on SharePoint Server 2016 and newer.  
+			Verify with: (Get-SPOTenant).SpecialCharactersStateInFileFolderNames
+			Enable with: Set-SPOTenant -SpecialCharactersStateInFileFolderNames Allowed			
+			When enabled test for invalid characters allowed on legacy SharePoint Server 2013 and older.  
+			  
 		
 		.PARAMETER Attributes FileAttributes
 			Gets files and folders with the specified attributes. This parameter supports all attributes and lets you specify complex combinations of attributes.
@@ -224,7 +230,7 @@ Function Rename-InvalidSPOFileFolder {
 		.NOTE
 			Author: Terry E Dow
 			Creation Date: 2018-12-23
-			Last Modified: 2019-01-12
+			Last Modified: 2019-03-02
 
 			Reference:
 				
@@ -318,8 +324,7 @@ Function Rename-InvalidSPOFileFolder {
 		[Parameter(
 		ValueFromPipeline=$TRUE,
 		ValueFromPipelineByPropertyName=$TRUE )]
-		[Alias('Legacy2013')]
-		[Switch] $SpecialCharactersStateInFileFolderNamesAllowed = $NULL,
+		[Switch] $Legacy2013 = $NULL,
 
 	#region Script Header
 
@@ -348,7 +353,7 @@ Function Rename-InvalidSPOFileFolder {
 			[Int] $CompressAttachmentLargerThan = 5MB
 	)
 
-	#Requires -version 3
+	#Requires -version 5
 	Set-StrictMode -Version Latest
 
 	# Detect cmdlet common parameters.
@@ -392,13 +397,13 @@ Function Rename-InvalidSPOFileFolder {
 	$renameFolderScriptFileBaseName =  ( $( ( $outFilePathBase.dateTimeStamp, $outFilePathBase.executionSourceName, 'Rename-InvalidSPOFolder', $OutFileNameTag ) | Where-Object { $PSItem } ) -Join '-').Trim( '-' ) 
 	$renameFolderScriptFilePathName =  "$($outFilePathBase.FolderPath)$renameFolderScriptFileBaseName.ps1"
 	Write-Debug "`$renameFolderScriptFilePathName: $renameFolderScriptFilePathName"
-	$renameFolderLogFilePathName =  "$($outFilePathBase.FolderPath)$renameFolderScriptFileBaseName.log".Replace( "'", "''" ) # Single quote escaped
-	Write-Debug "`$renameFolderLogFilePathName: $renameFolderLogFilePathName"
+	$renameFolderLogFilePathNameEscaped =  "$($outFilePathBase.FolderPath)$renameFolderScriptFileBaseName.log".Replace( "'", "''" ) # Single quote escaped
+	Write-Debug "`$renameFolderLogFilePathNameEscaped: $renameFolderLogFilePathNameEscaped"
 	$renameFileScriptFileBaseName =  ( $( ( $outFilePathBase.dateTimeStamp, $outFilePathBase.executionSourceName, 'Rename-InvalidSPOFile', $OutFileNameTag ) | Where-Object { $PSItem } ) -Join '-').Trim( '-' )
 	$renameFileScriptFilePathName =  "$($outFilePathBase.FolderPath)$renameFileScriptFileBaseName.ps1"
 	Write-Debug "`$renameFileScriptFilePathName: $renameFileScriptFilePathName"
-	$renameFileLogFilePathName =  "$($outFilePathBase.FolderPath)$renameFileScriptFileBaseName.log".Replace( "'", "''" ) # Single quote escaped
-	Write-Debug "`$renameFileLogFilePathName: $renameFileLogFilePathName"
+	$renameFileLogFilePathNameEscaped =  "$($outFilePathBase.FolderPath)$renameFileScriptFileBaseName.log".Replace( "'", "''" ) # Single quote escaped
+	Write-Debug "`$renameFileLogFilePathNameEscaped: $renameFileLogFilePathNameEscaped"
 
 	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 	# Optionally start or restart PowerShell transcript.
@@ -419,12 +424,6 @@ Function Rename-InvalidSPOFileFolder {
 	# Collect report information
 	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 
-	# Validate parameters
-	
-	#If ( -Not ( $Directory -XOr $File ) ) {
-	#	Throw 'Either -Directory or -File required.  Run with -Directory, then rename invalid folders.  Run with -File, then rename invalid files.'
-	#}
-	
 	# Create Get-ChildItem hash table to splat parameters.  
 	$getChildItemParameters = @{}
 	If ( $Attributes ) { $getChildItemParameters.Attributes = $Attributes }
@@ -453,7 +452,7 @@ Function Rename-InvalidSPOFileFolder {
 	$testInvalidSPOFileFolderParameters = @{}
 	#If ( $Debug ) { $testInvalidSPOFileFolderParameters.Debug = $Debug }
 	$testInvalidSPOFileFolderParameters.Debug = $FALSE
-	If ( $SpecialCharactersStateInFileFolderNamesAllowed ) { $testInvalidSPOFileFolderParameters.SpecialCharactersStateInFileFolderNamesAllowed = $SpecialCharactersStateInFileFolderNamesAllowed }
+	If ( $Legacy2013 ) { $testInvalidSPOFileFolderParameters.Legacy2013 = $Legacy2013 }
 	#If ( $Verbose ) { $testInvalidSPOFileFolderParameters.Verbose = $Verbose }
 	$testInvalidSPOFileFolderParameters.Verbose = $FALSE
 	If ( $Debug ) {
@@ -463,97 +462,112 @@ Function Rename-InvalidSPOFileFolder {
 	}
 	
 	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
-	# Generate rename invalid folders script.
-	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
-	
-	$invalidFolders = @{}
-	Write-Host "Scanning folders:, $Path"
-	
-	# Generate table of invalid folders.
-	If ( $getChildItemParameters.Keys -NotContains 'Directory' ) { $getChildItemParameters.Add( 'Directory', $TRUE ) }
-	If ( $getChildItemParameters.Keys -Contains 'File' ) { $getChildItemParameters.Remove( 'File' ) }
-	Get-ChildItem @getChildItemParameters |
-		Test-InvalidSPOFileFolder @testInvalidSPOFileFolderParameters | 
-		Where-Object { $PSItem.IsInvalid } |
-		ForEach-Object {
-			If ( $invalidFolders.Keys -NotContains $PSItem.FullName ) { $invalidFolders.Add( $PSItem.FullName, $PSItem ) }
-		}
-	If ( $Debug ) {
-		ForEach ( $key In $invalidFolders.Keys ) {
-			Write-Debug "`$invalidFolders[$key]`:,$($invalidFolders[$key])"
-		}
-	}
-	$invalidFolderCount = $invalidFolders.Keys.Count
-	Write-Host "Invalid Folder Count: $invalidFolderCount"
-	
-	# Generate script file.
-	"Start-Transcript -Path '$renameFolderLogFilePathName'" | Out-File -FilePath $renameFolderScriptFilePathName -Encoding UTF8 -WhatIf:$FALSE
-	$invalidFolders.Keys | 
-		ForEach-Object {
-			Write-Output $invalidFolders[$PSItem]
-		} |
-		Sort-Object -Property FullNameFolderDepth -Descending |
-		ForEach-Object {
-			Write-Debug "`$PSItem.FullName:,$($PSItem.FullName)"
-			Write-Debug "`$PSItem.NewName:,$($PSItem.NewName)"
-			Write-Debug "`$PSItem.FullNameFolderDepth:,$($PSItem.FullNameFolderDepth)"
-
-			If ( $PSItem.NewName ) { 
-				Write-Host "Rename-Item -LiteralPath '$($PSItem.FullName)' -NewName '$($PSItem.NewName)'"
-				$fullName = $PSItem.FullName.Replace("'","''")
-				$newName = $PSItem.NewName.Replace("'","''")
-				Write-Output "Rename-Item -LiteralPath '$fullName' -NewName '$newName'" # -Confirm:`$FALSE
-			}
-		} |
-		Out-File -FilePath $renameFolderScriptFilePathName -Append -Encoding UTF8 -WhatIf:$FALSE
-
-	# Remove script file if empty.
-	If ( -Not $invalidFolderCount ) { 
-		Remove-Item -LiteralPath $renameFolderScriptFilePathName -Confirm:$FALSE 
-	} Else {
-		Write-Host
-		Write-Host "Review and then run the following folder rename PowerShell script file:`n$renameFolderScriptFilePathName"
-		Write-Host 
-		Write-Host 'Whenever the folder rename script is ran, run this solution again before running the file rename script.'
-	}
-
-	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 	# Generate rename invalid files script
 	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
 	
 	$invalidFileCount = 0
-	Write-Host
-	Write-Host "Scanning files:, $Path"
+	Write-Information ''
+	Write-Information "Scanning files:, $Path"
 	
-	# Generate script file.
-	"Start-Transcript -Path '$renameFileLogFilePathName'" | Out-File -FilePath $renameFileScriptFilePathName -Encoding UTF8 -WhatIf:$FALSE
+	# Script Begin
+@"
+Start-Transcript -Path '$renameFileLogFilePathNameEscaped' -WhatIf:`$FALSE
+
+"@ | 
+		Out-File -FilePath $renameFileScriptFilePathName -Encoding UTF8 -WhatIf:$FALSE
+	
+	# Script Process
 	If ( $getChildItemParameters.Keys -Contains 'Directory' ) { $getChildItemParameters.Remove( 'Directory' ) }
 	If ( $getChildItemParameters.Keys -NotContains 'File' ) { $getChildItemParameters.Add( 'File', $TRUE ) }
 	Get-ChildItem @getChildItemParameters |
 		Test-InvalidSPOFileFolder @testInvalidSPOFileFolderParameters | 
-		Where-Object { $PSItem.IsInvalid } |
+		Where-Object { $PSItem.IsInvalid -And $PSItem.NewName } |
 		ForEach-Object {
 			$invalidFileCount++
 			Write-Debug "`$PSItem.FullName:,$($PSItem.FullName)"
 			Write-Debug "`$PSItem.NewName:,$($PSItem.NewName)"
-			
-			If ( $PSItem.NewName ) { 
-				Write-Host "Rename-Item -LiteralPath '$($PSItem.FullName)' -NewName '$($PSItem.NewName)'"
-				$fullName = $PSItem.FullName.Replace("'","''")
-				$newName = $PSItem.NewName.Replace("'","''")
-				Write-Output "Rename-Item -LiteralPath '$fullName' -NewName '$newName'" # -Confirm:`$FALSE
-			}
+						
+			$fullNameEscaped = $PSItem.FullName.Replace("'","''")
+			$newNameEscaped = $PSItem.NewName.Replace("'","''")
+			Out-Host -InputObject "Rename-Item -LiteralPath '$fullNameEscaped' -NewName '$newNameEscaped'"
+			Write-Output @"
+Out-Host -InputObject "Rename-Item -LiteralPath '$fullNameEscaped' -NewName '$newNameEscaped'"
+                       Rename-Item -LiteralPath '$fullNameEscaped' -NewName '$newNameEscaped'
+
+"@
+
 		} |
 		Out-File -FilePath $renameFileScriptFilePathName -Append -Encoding UTF8 -WhatIf:$FALSE
+			
+	# Script End
+@'
+Stop-Transcript
+'@ | Out-File -FilePath $renameFileScriptFilePathName -Append -Encoding UTF8 -WhatIf:$FALSE
 
-	Write-Host "Invalid File Count: $invalidFileCount"
+	Write-Information "Invalid File Count: $invalidFileCount"
 	
-	# Remove script file if empty.
+	# Remove script file if not needed.
 	If ( -Not $invalidFileCount ) { 
 		Remove-Item -LiteralPath $renameFileScriptFilePathName -Confirm:$FALSE 
 	} Else {
-		Write-Host
-		Write-Host "Review and then run the following file rename PowerShell script file:`n$renameFileScriptFilePathName"
+		Out-Host -InputObject ''
+		Out-Host -InputObject "Review and then run the following file rename PowerShell script file:`n$renameFileScriptFilePathName"
+	}
+	
+	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
+	# Generate rename invalid folders script.
+	#---+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8
+	
+	$invalidFolderCount = 0
+	Out-Host -InputObject ''
+	Out-Host -InputObject "Scanning folders:, $Path"
+	
+	# Script Begin
+@"
+Start-Transcript -Path '$renameFolderLogFilePathNameEscaped' -WhatIf:`$FALSE
+
+"@ | 
+		Out-File -FilePath $renameFolderScriptFilePathName -Encoding UTF8 -WhatIf:$FALSE
+	
+	# Script Process
+	If ( $getChildItemParameters.Keys -NotContains 'Directory' ) { $getChildItemParameters.Add( 'Directory', $TRUE ) }
+	If ( $getChildItemParameters.Keys -Contains 'File' ) { $getChildItemParameters.Remove( 'File' ) }
+	Get-ChildItem @getChildItemParameters |
+		Test-InvalidSPOFileFolder @testInvalidSPOFileFolderParameters | 
+		Where-Object { $PSItem.IsInvalid -And $PSItem.NewName} |
+		Sort-Object -Property FullNameFolderDepth -Descending |
+		ForEach-Object {
+			$invalidFolderCount++
+			Write-Debug "`$PSItem.FullName:,$($PSItem.FullName)"
+			Write-Debug "`$PSItem.NewName:,$($PSItem.NewName)"
+			Write-Debug "`$PSItem.FullNameFolderDepth:,$($PSItem.FullNameFolderDepth)"
+			
+			$fullNameEscaped = $PSItem.FullName.Replace("'","''")
+			$newNameEscaped = $PSItem.NewName.Replace("'","''")
+			Out-Host -InputObject "Rename-Item -LiteralPath '$fullNameEscaped' -NewName '$newNameEscaped'"
+			Write-Output @"
+Out-Host -InputObject `"Rename-Item -LiteralPath '$fullNameEscaped' -NewName '$newNameEscaped'`"
+                       Rename-Item -LiteralPath '$fullNameEscaped' -NewName '$newNameEscaped'
+
+"@
+
+		} |
+		Out-File -FilePath $renameFolderScriptFilePathName -Append -Encoding UTF8 -WhatIf:$FALSE
+		
+	# Script End
+@'
+Stop-Transcript
+'@ | Out-File -FilePath $renameFolderScriptFilePathName -Append -Encoding UTF8 -WhatIf:$FALSE
+	
+	# Remove script file if not needed.
+	Out-Host -InputObject "Invalid Folder Count: $invalidFolderCount"
+	If ( -Not $invalidFolderCount ) { 
+		Remove-Item -LiteralPath $renameFolderScriptFilePathName -Confirm:$FALSE 
+	} Else {
+		Out-Host -InputObject ''
+		Out-Host -InputObject "Review and then run the following folder rename PowerShell script file:`n$renameFolderScriptFilePathName"
+		Out-Host -InputObject ''
+		Out-Host -InputObject 'Whenever the folder rename script is ran, run this solution again before running the file rename script.'
 	}
 		
 	#region Script Footer
